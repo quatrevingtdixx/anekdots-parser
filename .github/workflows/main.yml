@@ -1,12 +1,7 @@
-## 5️⃣ GitHub Actions workflow (`.github/workflows/main.yml`)
-
-```yaml
 name: Parse Anekdots
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 12 * * 1'  # раз в неделю в понедельник в 12:00 UTC
 
 jobs:
   build:
