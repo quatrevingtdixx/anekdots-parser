@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -23,8 +23,8 @@ jobs:
     - name: Run parser
       run: python parse_anekdots.py
 
-    - name: Upload Excel
-      uses: actions/upload-artifact@v3
+    - name: Upload Excel artifact
+      uses: actions/upload-artifact@v4
       with:
         name: anekdots-evreev
         path: anekdots_evreev.xlsx
