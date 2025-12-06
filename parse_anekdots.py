@@ -4,25 +4,33 @@ import pandas as pd
 import time
 import os
 
-# Список категорий для парсинга
+# Заголовки — ОБЯЗАТЕЛЬНО!
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/119.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
 CATEGORIES = {
-    "evreev":         "https://shytok.net/anekdots/anekdoty-pro-evreev",
-    "advokatov":      "https://shytok.net/anekdots/anekdoty-pro-advokatov",
-    "armyan":         "https://shytok.net/anekdots/anekdoty-pro-armyan",
-    "voennyih":       "https://shytok.net/anekdots/anekdoty-pro-voennyih",
-    "zhivotnyh":      "https://shytok.net/anekdots/anekdoty-pro-zhivotnyh",
+    "evreev":    "https://shytok.net/anekdots/anekdoty-pro-evreev",
+    "advokatov": "https://shytok.net/anekdots/anekdoty-pro-advokatov",
+    "armyan":    "https://shytok.net/anekdots/anekdoty-pro-armyan",
+    "voennyih":  "https://shytok.net/anekdots/anekdoty-pro-voennyih",
+    "zhivotnyh": "https://shytok.net/anekdots/anekdoty-pro-zhivotnyh",
 }
 
 def build_url(base, page):
-    """Страницы имеют формат category.html, category-2.html и т.д."""
     if page == 1:
         return f"{base}.html"
     return f"{base}-{page}.html"
 
+
 def parse_page(url):
-    """Парсит одну страницу и возвращает список анекдотов."""
     try:
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=10, headers=HEADERS)
         resp.raise_for_status()
     except Exception as e:
         print(f"Ошибка загрузки {url}: {e}")
@@ -30,9 +38,9 @@ def parse_page(url):
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Ищем текст всех анекдотов
     blocks = soup.find_all("div", class_="text2")
     jokes = []
+
     for b in blocks:
         text = b.get_text("\n", strip=True)
         if text and len(text) > 3:
@@ -40,8 +48,8 @@ def parse_page(url):
 
     return jokes
 
+
 def parse_category(name, base_url, max_pages=200):
-    """Парсит все страницы одной категории."""
     all_jokes = []
 
     for page in range(1, max_pages + 1):
@@ -50,9 +58,8 @@ def parse_category(name, base_url, max_pages=200):
 
         jokes = parse_page(url)
 
-        # Если страница пустая — значит пагинация закончилась
         if not jokes:
-            print(f"[{name}] Конец страниц. Останов.")
+            print(f"[{name}] Конец страниц.")
             break
 
         all_jokes.extend(jokes)
@@ -60,20 +67,21 @@ def parse_category(name, base_url, max_pages=200):
 
     return all_jokes
 
+
 def main():
     os.makedirs("output", exist_ok=True)
 
     for name, base in CATEGORIES.items():
         print(f"\n=== Парсим категорию: {name} ===")
+
         jokes = parse_category(name, base)
 
         if jokes:
-            filename = os.path.join("output", f"anekdots_{name}.xlsx")
-            df = pd.DataFrame(jokes, columns=["Анекдот"])
-            df.to_excel(filename, index=False, header=False)
+            filename = f"output/anekdots_{name}.xlsx"
+            pd.DataFrame(jokes, columns=["Анекдот"]).to_excel(filename, index=False, header=False)
             print(f"[{name}] Сохранено {len(jokes)} анекдотов → {filename}")
         else:
-            print(f"[{name}] Анекдоты не найдены!")
+            print(f"[{name}] Анекдоты НЕ найдены!")
 
 if __name__ == "__main__":
     main()
