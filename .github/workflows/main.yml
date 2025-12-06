@@ -25,5 +25,5 @@ jobs:
     - name: Upload Excel
       uses: actions/upload-artifact@v4
       with:
-        name: anekdots-evreev
-        path: anekdots_evreev.xlsx
+        name: anekdots-all
+        path: output/*.xlsx
