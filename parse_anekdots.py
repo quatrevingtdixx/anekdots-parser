@@ -8,55 +8,69 @@ BASE_URL = "https://shytok.net/anekdots/anekdoty-pro-evreev"
 def page_url(page_num: int) -> str:
     if page_num == 1:
         return BASE_URL + ".html"
-    return f"{BASE_URL}/page{page_num}.html"
+    return f"{BASE_URL}-{page_num}.html"
 
-def fetch_page(url, retries=3):
-    """Запрос страницы со стабильным поведением."""
-    for attempt in range(1, retries + 1):
-        try:
-            print(f"  Attempt {attempt}: GET {url}")
-            resp = requests.get(url, timeout=10)   # важный таймаут
-            resp.encoding = "utf-8"
-            return resp.text
+def clean_html_block(html_block):
+    """Чистит HTML и разбивает анекдоты по <br><br>."""
+    # Преобразуем в soup
+    soup = BeautifulSoup(html_block, "html.parser")
 
-        except Exception as e:
-            print(f"    Error: {e}")
-            time.sleep(2)
+    # Удаляем мусорные блоки
+    for tag in soup.find_all(["h1", "center", "script", "span", "div"]):
+        tag.decompose()
 
-    print("  Failed to fetch page after retries.")
-    return None
+    # Получаем HTML без них
+    cleaned_html = str(soup)
+
+    # Разделяем анекдоты
+    raw_parts = cleaned_html.split("<br><br>")
+
+    # Преобразуем каждую часть в текст
+    final_texts = []
+    for part in raw_parts:
+        text = BeautifulSoup(part, "html.parser").get_text(strip=True)
+        if text and len(text) > 3:
+            final_texts.append(text)
+
+    return final_texts
+
 
 def fetch_anekdots():
-    anekdots = []
+    all_anekdots = []
 
     for page in range(1, 90):
         url = page_url(page)
-        print(f"\nFetching page {page}/89: {url}")
+        print(f"\n=== Fetching page {page}/89: {url}")
 
-        html = fetch_page(url)
-        if html is None:
-            print("  Skipping page.")
+        try:
+            resp = requests.get(url, timeout=10)
+        except Exception as e:
+            print(f"  ERROR: failed to request page: {e}")
             continue
 
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(resp.text, "html.parser")
 
-        blocks = soup.select("div.text")
-        print(f"  Found {len(blocks)} blocks")
+        content = soup.find("div", id="dle-content")
+        if not content:
+            print("  ERROR: <div id='dle-content'> not found")
+            continue
 
-        for div in blocks:
-            text = div.get_text(strip=True)
-            if text:
-                anekdots.append(text)
+        anekdots = clean_html_block(str(content))
+        print(f"  Found {len(anekdots)} jokes on this page")
 
-        time.sleep(0.5)  # пауза, чтобы не заблокировали
+        all_anekdots.extend(anekdots)
 
-    return anekdots
+        time.sleep(0.5)
+
+    return all_anekdots
+
 
 def save_to_excel(anekdots, filename="anekdots_evreev.xlsx"):
-    df = pd.DataFrame({'Анекдот': anekdots})
+    df = pd.DataFrame({"Анекдот": anekdots})
     df.to_excel(filename, index=False, header=False)
-    print(f"\nSaved {len(anekdots)} anekdots to {filename}")
+    print(f"\n=== Saved {len(anekdots)} анекдотов в {filename}")
+
 
 if __name__ == "__main__":
-    all_anekdots = fetch_anekdots()
-    save_to_excel(all_anekdots)
+    jokes = fetch_anekdots()
+    save_to_excel(jokes)
