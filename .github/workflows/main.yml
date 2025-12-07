@@ -6,9 +6,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -17,13 +17,25 @@ jobs:
 
     - name: Install dependencies
       run: |
+        python -m pip install --upgrade pip
         pip install -r requirements.txt
 
     - name: Run parser
-      run: python parse_anekdots.py
+      run: |
+        python parse_anekdots.py
 
-    - name: Upload Excel
+    - name: Debug listing
+      run: |
+        echo "PWD: $(pwd)"
+        echo "Root files:"
+        ls -la
+        echo "Output folder:"
+        ls -la output || true
+        echo "Find xlsx:"
+        find . -type f -name '*.xlsx' -printf '%p %s\n' || true
+
+    - name: Upload all Excel artifacts
       uses: actions/upload-artifact@v4
       with:
         name: anekdots-all
-        path: output/*.xlsx
+        path: output
