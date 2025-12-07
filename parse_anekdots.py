@@ -1,4 +1,3 @@
-# parse_anekdots.py (verbosed)
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -17,31 +16,98 @@ HEADERS = {
 }
 
 CATEGORIES = {
-    # (вставь сюда весь твой список категорий — как раньше)
     "evreev": "https://shytok.net/anekdots/anekdoty-pro-evreev",
     "advokatov": "https://shytok.net/anekdots/anekdoty-pro-advokatov",
     "armyan": "https://shytok.net/anekdots/anekdoty-pro-armyan",
     "voennyih": "https://shytok.net/anekdots/anekdoty-pro-voennyih",
     "zhivotnyh": "https://shytok.net/anekdots/anekdoty-pro-zhivotnyh",
-    # ... остальные категории ...
+    "sherloka_holmsa": "https://shytok.net/anekdots/anekdoty-pro-sherloka-holmsa",
+    "forex": "https://shytok.net/anekdots/anekdoty-pro-forex",
+    "telefonnye_prikoly": "https://shytok.net/anekdots/telefonnye-prikoly",
+    "religija": "https://shytok.net/anekdots/anekdoty-pro-religiju",
+    "chukchu": "https://shytok.net/anekdots/anekdoty-pro-chukchu",
+    "muzha_i_zhenu": "https://shytok.net/anekdots/anekdots-pro-mujaijenu",
+    "blondinok": "https://shytok.net/anekdots/anekdoty-pro-blondinok",
+    "zhenshchin": "https://shytok.net/anekdots/anekdoty-pro-zhenshchin",
+    "lyubovnikov": "https://shytok.net/anekdots/anekdoty-pro-lyubovnikov",
+    "policiju": "https://shytok.net/anekdots/anekdoty-pro-policiju",
+    "kompjuternye": "https://shytok.net/anekdots/kompjuternye-anekdoty",
+    "detej": "https://shytok.net/anekdots/anekdoty-pro-detej",
+    "vinni_puha": "https://shytok.net/anekdots/anekdoty-pro-vinni-puha",
+    "anglijskij_jumor": "https://shytok.net/anekdots/anglijskij-jumor",
+    "chernyj_jumor": "https://shytok.net/anekdots/chernyj-jumor",
+    "trjoh_bogatyrej": "https://shytok.net/anekdots/anekdoty-pro-trjoh-bogatyrej",
+    "studentov": "https://shytok.net/anekdots/anekdoty-pro-studentov",
+    "muzhchin": "https://shytok.net/anekdots/anekdoty-pro-muzhchin",
+    "vrachej": "https://shytok.net/anekdots/anekdoty-pro-vrachej",
+    "poshlye": "https://shytok.net/anekdots/poshlye-anekdoty",
+    "vasilija_ivanovicha": "https://shytok.net/anekdots/anekdoty-pro-vasiliya-ivanovicha-i-petku",
+    "narkomanov": "https://shytok.net/anekdots/anekdoty-pro-narkomanov",
+    "molodozhenov": "https://shytok.net/anekdots/anekdoty-pro-molodozhenov",
+    "ljubov_zla": "https://shytok.net/anekdots/anekdoty-ljubov-zla",
+    "russkij_nemec_kitaec": "https://shytok.net/anekdots/vstretilis-russkij-nemec-kitaec",
+    "teshchu": "https://shytok.net/anekdots/anekdoty-pro-teshchu",
+    "shtirlica": "https://shytok.net/anekdots/anekdoty-pro-shtirlica",
+    "vovochku": "https://shytok.net/anekdots/anekdoty-pro-vovochku",
+    "poruchika_rzhevskogo": "https://shytok.net/anekdots/anekdoty-pro-poruchika-rzhevskogo",
+    "pensionerov": "https://shytok.net/anekdots/anekdoty-pro-pensionerov",
 }
 
 OUTDIR = "output"
 os.makedirs(OUTDIR, exist_ok=True)
+
+MAX_PAGES = 200
+REQUEST_RETRIES = 3
+INITIAL_BACKOFF = 1.0  # seconds
+
 
 def build_url(base, page):
     if page == 1:
         return f"{base}.html"
     return f"{base}-{page}.html"
 
+
+def fetch_with_retries(url, retries=REQUEST_RETRIES):
+    backoff = INITIAL_BACKOFF
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, timeout=12, headers=HEADERS)
+            # Если 404 — страница реально не существует, считаем это "пустой" (конец пагинации)
+            if resp.status_code == 404:
+                return [], 404
+            resp.raise_for_status()
+            return resp.text, resp.status_code
+        except requests.exceptions.HTTPError as he:
+            status = None
+            if he.response is not None:
+                status = he.response.status_code
+            # если 404, вернуть как empty (конец)
+            if status == 404:
+                return [], 404
+            # для остальных HTTP ошибок пробуем ретрай
+            print(f"[WARN] HTTPError {status} for {url} (attempt {attempt}/{retries})")
+        except requests.exceptions.RequestException as re:
+            print(f"[WARN] RequestException for {url}: {re} (attempt {attempt}/{retries})")
+        # backoff before retry (except last attempt)
+        if attempt < retries:
+            time.sleep(backoff)
+            backoff *= 2
+    # все попытки не удались
+    return None, None
+
+
 def parse_page(url):
-    try:
-        resp = requests.get(url, timeout=12, headers=HEADERS)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"[ERROR] request {url}: {e}", file=sys.stderr)
-        return None  # None = ошибка, [] = пустая страница
-    soup = BeautifulSoup(resp.text, "html.parser")
+    html_or_list, status = fetch_with_retries(url, retries=REQUEST_RETRIES)
+    # статус 404 -> интерпретируем как пустую страницу (конец пагинации)
+    if status == 404:
+        # Возвращаем пустой список, caller остановит пагинацию
+        return []
+    if html_or_list is None:
+        # реальная сетевая/прочая ошибка после всех ретраев — возвращаем None чтобы caller продолжил аккуратно
+        return None
+
+    html = html_or_list
+    soup = BeautifulSoup(html, "html.parser")
     blocks = soup.find_all("div", class_="text2")
     jokes = []
     for b in blocks:
@@ -50,21 +116,27 @@ def parse_page(url):
             jokes.append(text)
     return jokes
 
-def parse_category(name, base_url, max_pages=200):
+
+def parse_category(name, base_url, max_pages=MAX_PAGES):
     print(f"[{name}] start parsing")
     all_jokes = []
     seen = set()
+
     for page in range(1, max_pages + 1):
         url = build_url(base_url, page)
         print(f"[{name}] page {page} -> {url}")
+
         res = parse_page(url)
+        # None = сетевой/неисправимая ошибка (после ретраев) — пропустить страницу и продолжить
         if res is None:
-            print(f"[{name}] ERROR loading page {page}, skipping page and continuing")
+            print(f"[{name}] [WARN] could not fetch page {page} after retries — skipping page")
             time.sleep(1)
             continue
-        if not res:
-            print(f"[{name}] no jokes on page {page} -> stopping pagination")
+        # [] = пустая страница или 404 => конец пагинации
+        if res == []:
+            print(f"[{name}] no jokes on page {page} (likely end of pagination) -> stop")
             break
+
         new = 0
         for j in res:
             if j not in seen:
@@ -72,9 +144,11 @@ def parse_category(name, base_url, max_pages=200):
                 all_jokes.append(j)
                 new += 1
         print(f"[{name}] page {page}: found {len(res)} jokes, {new} new unique")
-        time.sleep(0.4)
+        time.sleep(0.35)
+
     print(f"[{name}] finished: {len(all_jokes)} unique jokes collected")
     return all_jokes
+
 
 def main():
     start = datetime.utcnow()
@@ -85,10 +159,10 @@ def main():
     for name, base in CATEGORIES.items():
         jokes = parse_category(name, base)
         if jokes:
-            filename = os.path.join(OUTDIR, f"anekdots_{name}.xlsx")
-            pd.DataFrame(jokes, columns=["Анекдот"]).to_excel(filename, index=False, header=False)
-            saved_files.append(filename)
-            print(f"[{name}] saved {len(jokes)} -> {filename}")
+            fname = os.path.join(OUTDIR, f"anekdots_{name}.xlsx")
+            pd.DataFrame(jokes, columns=["Анекдот"]).to_excel(fname, index=False, header=False)
+            saved_files.append(fname)
+            print(f"[{name}] saved {len(jokes)} -> {fname}")
         else:
             print(f"[{name}] no jokes saved")
 
@@ -97,9 +171,8 @@ def main():
                 seen_global.add(j)
                 all_rows.append({"Анекдот": j, "Категория": name})
 
-    # итог
+    # итоговый общий файл
     df_all = pd.DataFrame(all_rows)
-    # перемешиваем итог для стабильности (можно убрать random_state для нового порядка)
     if not df_all.empty:
         df_all = df_all.sample(frac=1, random_state=42).reset_index(drop=True)
         all_fname = os.path.join(OUTDIR, "anekdots_all.xlsx")
@@ -109,21 +182,22 @@ def main():
     else:
         print("[ALL] no rows to save")
 
-    end = datetime.utcnow()
-    print("Summary:")
-    print(f"  Time: {start.isoformat()} -> {end.isoformat()}")
-    print(f"  Category files saved: {len([f for f in saved_files if 'anekdots_' in f])}")
+    # показ сохранённых файлов
     print("Saved files:")
     for f in saved_files:
         try:
             size = os.path.getsize(f)
         except Exception:
             size = -1
-        print(f"  - {f}  size={size}")
-    # exit nonzero if no files at all (makes workflow fail visibly)
+        print(f"  - {f} size={size}")
+
     if not saved_files:
         print("[ERROR] No files saved at all!", file=sys.stderr)
         sys.exit(2)
+
+    end = datetime.utcnow()
+    print(f"Completed in {(end - start).total_seconds():.1f} seconds")
+
 
 if __name__ == "__main__":
     main()
