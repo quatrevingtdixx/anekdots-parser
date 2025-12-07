@@ -54,12 +54,15 @@ CATEGORIES = {
     "pensionerov": "https://shytok.net/anekdots/anekdoty-pro-pensionerov",
 }
 
+
 def build_url(base, page):
     if page == 1:
         return f"{base}.html"
     return f"{base}-{page}.html"
 
+
 def parse_page(url):
+    """Парсим одну страницу"""
     try:
         resp = requests.get(url, timeout=10, headers=HEADERS)
         resp.raise_for_status()
@@ -78,35 +81,64 @@ def parse_page(url):
 
     return jokes
 
+
 def parse_category(name, base_url, max_pages=200):
+    """Парсим все страницы категории + удаление дублей внутри категории"""
     all_jokes = []
+    seen = set()
+
     for page in range(1, max_pages + 1):
         url = build_url(base_url, page)
         print(f"\n[{name}] Страница {page} → {url}")
 
         jokes = parse_page(url)
         if not jokes:
-            print(f"[{name}] Пусто. Конец страниц.")
+            print(f"[{name}] Конец страниц.")
             break
 
-        all_jokes.extend(jokes)
+        for joke in jokes:
+            if joke not in seen:
+                seen.add(joke)
+                all_jokes.append(joke)
+
         time.sleep(0.5)
 
     return all_jokes
 
+
 def main():
     os.makedirs("output", exist_ok=True)
+
+    all_rows = []     # строки общего файла
+    seen_global = set()  # глобально уникальные анекдоты
 
     for name, base in CATEGORIES.items():
         print(f"\n=== Парсим категорию: {name} ===")
         jokes = parse_category(name, base)
 
+        # индивидуальный Excel по категории
         if jokes:
             filename = f"output/anekdots_{name}.xlsx"
             pd.DataFrame(jokes, columns=["Анекдот"]).to_excel(filename, index=False, header=False)
-            print(f"[{name}] ✔ Сохранено {len(jokes)} анекдотов → {filename}")
+            print(f"[{name}] ✔ Сохранено {len(jokes)} уникальных анекдотов → {filename}")
         else:
             print(f"[{name}] ❌ Ничего не найдено!")
+
+        # добавляем в общий (тоже с удалением дублей)
+        for joke in jokes:
+            if joke not in seen_global:
+                seen_global.add(joke)
+                all_rows.append({"Анекдот": joke, "Категория": name})
+
+    # итоговый общий Excel
+    df_all = pd.DataFrame(all_rows)
+
+    # 🔥 случайная перемешка таблицы
+    df_all = df_all.sample(frac=1, random_state=42).reset_index(drop=True)
+
+    df_all.to_excel("output/anekdots_all.xlsx", index=False)
+    print("\n🎉 Готово: объединённый файл → output/anekdots_all.xlsx")
+
 
 if __name__ == "__main__":
     main()
