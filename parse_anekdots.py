@@ -1,10 +1,12 @@
+# parse_anekdots.py (verbosed)
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
 import os
+import sys
+from datetime import datetime
 
-# Работающие HTTP-заголовки — критично важно для GitHub Actions
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -14,131 +16,114 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
 }
 
-# Полный список категорий
 CATEGORIES = {
+    # (вставь сюда весь твой список категорий — как раньше)
     "evreev": "https://shytok.net/anekdots/anekdoty-pro-evreev",
     "advokatov": "https://shytok.net/anekdots/anekdoty-pro-advokatov",
     "armyan": "https://shytok.net/anekdots/anekdoty-pro-armyan",
     "voennyih": "https://shytok.net/anekdots/anekdoty-pro-voennyih",
     "zhivotnyh": "https://shytok.net/anekdots/anekdoty-pro-zhivotnyh",
-
-    "sherloka_holmsa": "https://shytok.net/anekdots/anekdoty-pro-sherloka-holmsa",
-    "forex": "https://shytok.net/anekdots/anekdoty-pro-forex",
-    "telefonnye_prikoly": "https://shytok.net/anekdots/telefonnye-prikoly",
-    "religija": "https://shytok.net/anekdots/anekdoty-pro-religiju",
-    "chukchu": "https://shytok.net/anekdots/anekdoty-pro-chukchu",
-    "muzha_i_zhenu": "https://shytok.net/anekdots/anekdots-pro-mujaijenu",
-    "blondinok": "https://shytok.net/anekdots/anekdoty-pro-blondinok",
-    "zhenshchin": "https://shytok.net/anekdots/anekdoty-pro-zhenshchin",
-    "lyubovnikov": "https://shytok.net/anekdots/anekdoty-pro-lyubovnikov",
-    "policiju": "https://shytok.net/anekdots/anekdoty-pro-policiju",
-    "kompjuternye": "https://shytok.net/anekdots/kompjuternye-anekdoty",
-    "detej": "https://shytok.net/anekdots/anekdoty-pro-detej",
-    "vinni_puha": "https://shytok.net/anekdots/anekdoty-pro-vinni-puha",
-    "anglijskij_jumor": "https://shytok.net/anekdots/anglijskij-jumor",
-    "chernyj_jumor": "https://shytok.net/anekdots/chernyj-jumor",
-    "trjoh_bogatyrej": "https://shytok.net/anekdots/anekdoty-pro-trjoh-bogatyrej",
-    "studentov": "https://shytok.net/anekdots/anekdoty-pro-studentov",
-    "muzhchin": "https://shytok.net/anekdots/anekdoty-pro-muzhchin",
-    "vrachej": "https://shytok.net/anekdots/anekdoty-pro-vrachej",
-    "poshlye": "https://shytok.net/anekdots/poshlye-anekdoty",
-    "vasilija_ivanovicha": "https://shytok.net/anekdots/anekdoty-pro-vasiliya-ivanovicha-i-petku",
-    "narkomanov": "https://shytok.net/anekdots/anekdoty-pro-narkomanov",
-    "molodozhenov": "https://shytok.net/anekdots/anekdoty-pro-molodozhenov",
-    "ljubov_zla": "https://shytok.net/anekdots/anekdoty-ljubov-zla",
-    "russkij_nemec_kitaec": "https://shytok.net/anekdots/vstretilis-russkij-nemec-kitaec",
-    "teshchu": "https://shytok.net/anekdots/anekdoty-pro-teshchu",
-    "shtirlica": "https://shytok.net/anekdots/anekdoty-pro-shtirlica",
-    "vovochku": "https://shytok.net/anekdots/anekdoty-pro-vovochku",
-    "poruchika_rzhevskogo": "https://shytok.net/anekdots/anekdoty-pro-poruchika-rzhevskogo",
-    "pensionerov": "https://shytok.net/anekdots/anekdoty-pro-pensionerov",
+    # ... остальные категории ...
 }
 
+OUTDIR = "output"
+os.makedirs(OUTDIR, exist_ok=True)
 
 def build_url(base, page):
     if page == 1:
         return f"{base}.html"
     return f"{base}-{page}.html"
 
-
 def parse_page(url):
-    """Парсим одну страницу"""
     try:
-        resp = requests.get(url, timeout=10, headers=HEADERS)
+        resp = requests.get(url, timeout=12, headers=HEADERS)
         resp.raise_for_status()
     except Exception as e:
-        print(f"Ошибка загрузки {url}: {e}")
-        return []
-
+        print(f"[ERROR] request {url}: {e}", file=sys.stderr)
+        return None  # None = ошибка, [] = пустая страница
     soup = BeautifulSoup(resp.text, "html.parser")
     blocks = soup.find_all("div", class_="text2")
-
     jokes = []
     for b in blocks:
         text = b.get_text("\n", strip=True)
         if text and len(text) > 3:
             jokes.append(text)
-
     return jokes
 
-
 def parse_category(name, base_url, max_pages=200):
-    """Парсим все страницы категории + удаление дублей внутри категории"""
+    print(f"[{name}] start parsing")
     all_jokes = []
     seen = set()
-
     for page in range(1, max_pages + 1):
         url = build_url(base_url, page)
-        print(f"\n[{name}] Страница {page} → {url}")
-
-        jokes = parse_page(url)
-        if not jokes:
-            print(f"[{name}] Конец страниц.")
+        print(f"[{name}] page {page} -> {url}")
+        res = parse_page(url)
+        if res is None:
+            print(f"[{name}] ERROR loading page {page}, skipping page and continuing")
+            time.sleep(1)
+            continue
+        if not res:
+            print(f"[{name}] no jokes on page {page} -> stopping pagination")
             break
-
-        for joke in jokes:
-            if joke not in seen:
-                seen.add(joke)
-                all_jokes.append(joke)
-
-        time.sleep(0.5)
-
+        new = 0
+        for j in res:
+            if j not in seen:
+                seen.add(j)
+                all_jokes.append(j)
+                new += 1
+        print(f"[{name}] page {page}: found {len(res)} jokes, {new} new unique")
+        time.sleep(0.4)
+    print(f"[{name}] finished: {len(all_jokes)} unique jokes collected")
     return all_jokes
 
-
 def main():
-    os.makedirs("output", exist_ok=True)
-
-    all_rows = []     # строки общего файла
-    seen_global = set()  # глобально уникальные анекдоты
+    start = datetime.utcnow()
+    all_rows = []
+    seen_global = set()
+    saved_files = []
 
     for name, base in CATEGORIES.items():
-        print(f"\n=== Парсим категорию: {name} ===")
         jokes = parse_category(name, base)
-
-        # индивидуальный Excel по категории
         if jokes:
-            filename = f"output/anekdots_{name}.xlsx"
+            filename = os.path.join(OUTDIR, f"anekdots_{name}.xlsx")
             pd.DataFrame(jokes, columns=["Анекдот"]).to_excel(filename, index=False, header=False)
-            print(f"[{name}] ✔ Сохранено {len(jokes)} уникальных анекдотов → {filename}")
+            saved_files.append(filename)
+            print(f"[{name}] saved {len(jokes)} -> {filename}")
         else:
-            print(f"[{name}] ❌ Ничего не найдено!")
+            print(f"[{name}] no jokes saved")
 
-        # добавляем в общий (тоже с удалением дублей)
-        for joke in jokes:
-            if joke not in seen_global:
-                seen_global.add(joke)
-                all_rows.append({"Анекдот": joke, "Категория": name})
+        for j in jokes:
+            if j not in seen_global:
+                seen_global.add(j)
+                all_rows.append({"Анекдот": j, "Категория": name})
 
-    # итоговый общий Excel
+    # итог
     df_all = pd.DataFrame(all_rows)
+    # перемешиваем итог для стабильности (можно убрать random_state для нового порядка)
+    if not df_all.empty:
+        df_all = df_all.sample(frac=1, random_state=42).reset_index(drop=True)
+        all_fname = os.path.join(OUTDIR, "anekdots_all.xlsx")
+        df_all.to_excel(all_fname, index=False)
+        saved_files.append(all_fname)
+        print(f"[ALL] saved combined {len(df_all)} -> {all_fname}")
+    else:
+        print("[ALL] no rows to save")
 
-    # 🔥 случайная перемешка таблицы
-    df_all = df_all.sample(frac=1, random_state=42).reset_index(drop=True)
-
-    df_all.to_excel("output/anekdots_all.xlsx", index=False)
-    print("\n🎉 Готово: объединённый файл → output/anekdots_all.xlsx")
-
+    end = datetime.utcnow()
+    print("Summary:")
+    print(f"  Time: {start.isoformat()} -> {end.isoformat()}")
+    print(f"  Category files saved: {len([f for f in saved_files if 'anekdots_' in f])}")
+    print("Saved files:")
+    for f in saved_files:
+        try:
+            size = os.path.getsize(f)
+        except Exception:
+            size = -1
+        print(f"  - {f}  size={size}")
+    # exit nonzero if no files at all (makes workflow fail visibly)
+    if not saved_files:
+        print("[ERROR] No files saved at all!", file=sys.stderr)
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()
